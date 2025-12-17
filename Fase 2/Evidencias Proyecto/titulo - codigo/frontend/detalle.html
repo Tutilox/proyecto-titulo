@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Vista Expandida</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+
+<style>
+:root {
+    --primary-green: #2ecc71;
+    --dark-bg: #1e1e1e;
+    --dark-card: #2a2a2a;
+    --dark-text: #e5e5e5;
+
+    --light-bg: #f3f4f62c;
+    --light-card: #ffffff18;
+    --light-text: #222;
+}
+
+body.light-mode {
+    background: var(--light-bg);
+    color: var(--light-text);
+}
+
+body.dark-mode {
+    background: var(--dark-bg);
+    color: var(--dark-text);
+}
+
+.navbar-custom {
+    transition: background 0.3s, color 0.3s;
+}
+
+body.light-mode .navbar-custom {
+    background: var(--light-card);
+    color: var(--light-text);
+}
+
+body.dark-mode .navbar-custom {
+    background: var(--dark-card);
+    color: var(--dark-text);
+}
+
+.card {
+    background: var(--light-card);
+}
+
+body.dark-mode .card {
+    background: var(--dark-card);
+    color: var(--dark-text);
+}
+
+.chart-container {
+    position: relative;
+    width: 100%;
+    height: 400px;
+}
+
+.badge-role {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+}
+
+@media (max-width: 768px) {
+    .chart-container { height: 260px; }
+}
+</style>
+</head>
+
+<body class="dark-mode">
+
+<nav class="navbar navbar-custom px-4 py-3 mb-4 d-flex justify-content-between align-items-center">
+    <div class="d-flex align-items-center gap-2">
+        <h4 class="m-0">Vista Expandida</h4>
+        <span id="role-badge" class="badge bg-secondary badge-role d-none"></span>
+    </div>
+
+    <div>
+        <button class="btn btn-secondary me-2" onclick="toggleTheme()">Cambiar Tema</button>
+        <button class="btn btn-info" onclick="window.location.href='dashboard.html'">Volver al Dashboard</button>
+    </div>
+</nav>
+
+<div class="container">
+
+    <!-- ALERTAS -->
+    <div id="alert-box" class="alert alert-danger d-none mb-3"></div>
+
+    <!-- FILTROS -->
+    <div class="card p-3 mb-4">
+        <div class="row g-3">
+
+            <div class="col-md-4">
+                <label class="form-label">Proyecto</label>
+                <select id="projectSelect" class="form-select"><option>Cargando...</option></select>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Pool</label>
+                <select id="poolSelect" class="form-select" disabled><option>Seleccione...</option></select>
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label">Sensor</label>
+                <select id="sensorSelect" class="form-select" disabled><option>Seleccione...</option></select>
+            </div>
+
+        </div>
+
+        <hr>
+
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Desde</label>
+                <input type="date" id="fromDate" class="form-control">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Hasta</label>
+                <input type="date" id="toDate" class="form-control">
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-green w-100" id="applyFiltersBtn">Aplicar filtros</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SELECTOR DE PARÁMETRO -->
+    <div class="card p-4 shadow mb-4">
+        <label class="form-label">Seleccionar parámetro:</label>
+        <select id="paramSelector" class="form-select">
+            <option value="ph">pH</option>
+            <option value="conductividad">Conductividad</option>
+            <option value="tds">TDS</option>
+            <option value="turbidez">Turbidez</option>
+            <option value="oxigeno">Oxígeno</option>
+        </select>
+    </div>
+
+    <!-- GRÁFICO -->
+    <div class="card p-4 shadow">
+        <h5 id="titleParam" class="mb-3">pH — Vista detallada</h5>
+
+        <div class="chart-container">
+            <canvas id="chartParam"></canvas>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const API_BASE = "http://localhost:3000/api";
+let chart;
+
+// ---------------------------
+// RANGOS DE REFERENCIA
+// ---------------------------
+const referenceRanges = {
+    ph: { min: 6.5, max: 8.5, color: "#2ecc71" },
+    conductividad: { max: 1.6, color: "#3498db" },
+    tds: { max: 700, color: "#9b59b6" },
+    turbidez: { max: 6, color: "#f1c40f" },
+    oxigeno: { min: 5, color: "#e74c3c" }
+};
+
+// ---------------------------
+// LÍNEAS DE REFERENCIA
+// ---------------------------
+const referenceLines = {
+    id: "referenceLines",
+    afterDraw(chart) {
+        const {ctx, chartArea: {left, right}, scales: {y}} = chart;
+        const param = document.getElementById("paramSelector").value;
+        const ref = referenceRanges[param];
+        if (!ref) return;
+
+        ctx.save();
+        ctx.setLineDash([5, 5]);
+        ctx.strokeStyle = "red";
+
+        if (ref.max !== undefined) {
+            const yPos = y.getPixelForValue(ref.max);
+            ctx.beginPath();
+            ctx.moveTo(left, yPos);
+            ctx.lineTo(right, yPos);
+            ctx.stroke();
+        }
+
+        if (ref.min !== undefined) {
+            const yPos = y.getPixelForValue(ref.min);
+            ctx.beginPath();
+            ctx.moveTo(left, yPos);
+            ctx.lineTo(right, yPos);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+};
+
+// ---------------------------
+// ALERTA ÚLTIMO VALOR
+// ---------------------------
+function evaluarAlerta(ultimo, param) {
+    const ref = referenceRanges[param];
+    if (!ref) return null;
+
+    if (ref.max && ultimo > ref.max)
+        return `⚠️ ${param} supera el máximo (${ref.max})`;
+
+    if (ref.min && ultimo < ref.min)
+        return `⚠️ ${param} por debajo del mínimo (${ref.min})`;
+
+    return null;
+}
+
+// ---------------------------
+// CARGA DE DATOS
+// ---------------------------
+async function loadData() {
+    const sensorId = document.getElementById("sensorSelect").value;
+    const param = document.getElementById("paramSelector").value;
+    const from = document.getElementById("fromDate").value;
+    const to = document.getElementById("toDate").value;
+
+    if (!sensorId) return;
+
+    const params = new URLSearchParams();
+    params.append("sensorId", sensorId);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(`${API_BASE}/measurements?${params.toString()}`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    const data = await res.json();
+
+    if (!data.length) {
+        document.getElementById("alert-box").classList.remove("d-none");
+        document.getElementById("alert-box").innerHTML = "No hay datos para este sensor.";
+        return;
+    }
+
+    data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const labels = data.map(d => new Date(d.timestamp).toLocaleTimeString());
+    const values = data.map(d => d[param]);
+
+    const ultimo = values.slice().reverse().find(v => v != null);
+    const alerta = evaluarAlerta(ultimo, param);
+
+    const box = document.getElementById("alert-box");
+    if (alerta) {
+        box.classList.remove("d-none");
+        box.innerHTML = alerta;
+    } else {
+        box.classList.add("d-none");
+    }
+
+    renderChart(labels, values, param);
+}
+
+// ---------------------------
+// RENDER CHART
+// ---------------------------
+function renderChart(labels, data, param) {
+    const ctx = document.getElementById("chartParam").getContext("2d");
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: param,
+                data,
+                borderColor: referenceRanges[param].color,
+                tension: 0.3,
+                borderWidth: 3,
+                pointRadius: 0,
+                spanGaps: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: getTextColor() }}},
+            scales: {
+                x: { ticks: { color: getTextColor() }},
+                y: { ticks: { color: getTextColor() }}
+            }
+        },
+        plugins: [referenceLines]
+    });
+}
+
+// ---------------------------
+// CARGA DE FILTROS (Proyecto → Pool → Sensor)
+// ---------------------------
+async function loadProjects() {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`${API_BASE}/projects`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    const projects = await res.json();
+    const select = document.getElementById("projectSelect");
+
+    select.innerHTML = `<option value="">Seleccione proyecto...</option>`;
+    projects.forEach(p => {
+        select.innerHTML += `<option value="${p._id}">${p.name}</option>`;
+    });
+}
+
+async function loadPools(projectId) {
+    const token = localStorage.getItem("token");
+    if (!projectId) return;
+
+    const res = await fetch(`${API_BASE}/pools?projectId=${projectId}`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    const pools = await res.json();
+    const select = document.getElementById("poolSelect");
+
+    select.disabled = false;
+    select.innerHTML = `<option value="">Seleccione pool...</option>`;
+    pools.forEach(pool => {
+        select.innerHTML += `<option value="${pool._id}">${pool.name}</option>`;
+    });
+}
+
+async function loadSensors(poolId) {
+    const token = localStorage.getItem("token");
+    if (!poolId) return;
+
+    const res = await fetch(`${API_BASE}/sensors?poolId=${poolId}`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    const sensors = await res.json();
+    const select = document.getElementById("sensorSelect");
+
+    select.disabled = false;
+    select.innerHTML = `<option value="">Seleccione sensor...</option>`;
+    sensors.forEach(sensor => {
+        select.innerHTML += `<option value="${sensor._id}">${sensor.name}</option>`;
+    });
+}
+
+// ---------------------------
+// THEME + ROL
+// ---------------------------
+function toggleTheme() {
+    document.body.classList.toggle("light-mode");
+    document.body.classList.toggle("dark-mode");
+    localStorage.setItem("theme", document.body.className);
+}
+
+function getTextColor() {
+    return document.body.classList.contains("dark-mode") ? "#e5e5e5" : "#222";
+}
+
+function setRoleBadgeFromToken() {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        const badge = document.getElementById("role-badge");
+        badge.textContent = "Rol: " + payload.role;
+        badge.classList.remove("d-none");
+    } catch (err) {}
+}
+
+// ---------------------------
+// EVENTOS
+// ---------------------------
+window.onload = () => {
+    setRoleBadgeFromToken();
+    loadProjects();
+
+    document.getElementById("projectSelect").addEventListener("change", e => {
+        loadPools(e.target.value);
+    });
+
+    document.getElementById("poolSelect").addEventListener("change", e => {
+        loadSensors(e.target.value);
+    });
+
+    document.getElementById("sensorSelect").addEventListener("change", () => {
+        loadData();
+    });
+
+    document.getElementById("applyFiltersBtn").addEventListener("click", () => {
+        loadData();
+    });
+
+    document.getElementById("paramSelector").addEventListener("change", () => {
+        loadData();
+        document.getElementById("titleParam").innerText =
+            `${paramSelector.value.toUpperCase()} — Vista detallada`;
+    });
+};
+</script>
+
+</body>
+</html>

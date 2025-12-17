@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+
+<style>
+:root {
+    --primary-green: #2ecc71;
+    --dark-bg: #1e1e1e;
+    --dark-card: #2a2a2a;
+    --dark-text: #e5e5e5;
+
+    --light-bg: #f3f4f62c;
+    --light-card: #ffffff18;
+    --light-text: #222;
+}
+
+body.light-mode {
+    background: var(--light-bg);
+    color: var(--light-text);
+}
+
+body.dark-mode {
+    background: var(--dark-bg);
+    color: var(--dark-text);
+}
+
+.navbar-custom {
+    transition: background 0.3s, color 0.3s;
+}
+
+body.light-mode .navbar-custom {
+    background: var(--light-card);
+    color: var(--light-text);
+    border-bottom: 1px solid #16edd0bb;
+}
+
+body.dark-mode .navbar-custom {
+    background: var(--dark-card);
+    color: var(--dark-text);
+    border-bottom: 1px solid #00b7774f;
+}
+
+.btn-green {
+    background: var(--primary-green);
+    border: none;
+}
+
+.btn-green:hover {
+    background: #15aa98;
+}
+
+.card {
+    background: var(--light-card);
+}
+
+body.dark-mode .card {
+    background: var(--dark-card);
+    color: var(--dark-text);
+}
+
+@media (max-width: 768px) {
+    .chart-container {
+        height: 220px;
+    }
+}
+
+.container {
+    max-width: 1000px;
+}
+
+.chart-container {
+    background: transparent;
+    position: relative;
+    width: 100%;
+    height: 320px;
+}
+
+.badge-role {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+}
+</style>
+</head>
+
+<body class="dark-mode">
+
+<!-- NAVBAR -->
+<nav class="navbar navbar-custom px-4 py-3 mb-4 d-flex justify-content-between align-items-center">
+    <div class="d-flex flex-column flex-sm-row align-items-sm-center gap-2">
+        <h4 class="m-0">Dashboard</h4>
+        <span id="role-badge" class="badge bg-secondary badge-role d-none"></span>
+    </div>
+
+    <div>
+        <button class="btn btn-secondary me-2" onclick="toggleTheme()">Cambiar Tema</button>
+        <button class="btn btn-danger" onclick="logout()">Cerrar sesión</button>
+    </div>
+</nav>
+
+<div class="container">
+
+    <!-- FILTROS -->
+    <div class="card p-3 mb-3">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Proyecto</label>
+                <select id="projectSelect" class="form-select">
+                    <option value="">Cargando...</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Pool / Biofiltro</label>
+                <select id="poolSelect" class="form-select" disabled>
+                    <option value="">Seleccione un proyecto</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Sensor</label>
+                <select id="sensorSelect" class="form-select" disabled>
+                    <option value="">Seleccione un pool</option>
+                </select>
+            </div>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Desde</label>
+                <input type="date" id="fromDate" class="form-control">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Hasta</label>
+                <input type="date" id="toDate" class="form-control">
+            </div>
+            <div class="col-md-4 d-flex justify-content-md-end">
+                <button class="btn btn-green w-100" id="applyFiltersBtn">
+                    Aplicar filtros
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🔔 CAJA DE ALERTAS -->
+    <div id="alert-box" class="alert alert-danger d-none mb-3"></div>
+
+    <div class="card p-4 shadow">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+            <h5 class="m-0">Gráfico de valores</h5>
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-green" onclick="window.location.href='detalle.html'">
+                    Ver vista expandida
+                </button>
+                <button class="btn btn-green" onclick="exportarCSV()">
+                    Exportar CSV
+                </button>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="myChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_BASE = "http://localhost:3000/api";
+let chart = null;
+
+// ------------------------------
+// LOGOUT
+// ------------------------------
+function logout() {
+    localStorage.removeItem("token");
+    window.location.href = "login.html";
+}
+
+// ------------------------------
+// Exportar CSV (con filtros)
+// ------------------------------
+async function exportarCSV() {
+    const token = localStorage.getItem("token");
+    if (!token) return window.location.href = "login.html";
+
+    const sensorId = document.getElementById("sensorSelect").value;
+    const from = document.getElementById("fromDate").value;
+    const to = document.getElementById("toDate").value;
+
+    const params = new URLSearchParams();
+    if (sensorId) params.append("sensorId", sensorId);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    try {
+        const res = await fetch(`${API_BASE}/export/csv?${params.toString()}`, {
+            headers: { "Authorization": "Bearer " + token }
+        });
+
+        if (!res.ok) {
+            if (res.status === 401) {
+                logout();
+                return;
+            }
+            const errText = await res.text();
+            alert("Error al exportar CSV: " + errText);
+            return;
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "mediciones.csv";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error(err);
+        alert("Error al exportar CSV");
+    }
+}
+
+// ------------------------------
+// Plugin: Líneas de referencia
+// ------------------------------
+const referenceLines = {
+    id: "referenceLines",
+    afterDraw(chart) {
+        const {ctx, chartArea: {left, right}, scales: {y}} = chart;
+
+        const refs = [
+            { value: 8.5, color: "red" },     // pH max
+            { value: 6.5, color: "orange" },  // pH min
+            { value: 700/100, color: "red" },     // TDS max
+            { value: 1.6, color: "red" },     // Conductividad max
+            { value: 6, color: "red" },       // Turbidez max
+            { value: 5, color: "orange" }     // Oxígeno min
+        ];
+
+        refs.forEach(ref => {
+            const yPos = y.getPixelForValue(ref.value);
+            if (yPos < y.top || yPos > y.bottom) return;
+
+            ctx.save();
+            ctx.strokeStyle = ref.color;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(left, yPos);
+            ctx.lineTo(right, yPos);
+            ctx.stroke();
+            ctx.restore();
+        });
+    }
+};
+
+// ------------------------------
+// ALERTAS
+// ------------------------------
+function sensorCongelado(values) {
+    if (!values || values.length < 5) return false;
+    const ultimos5 = values.slice(-5);
+    return ultimos5.every(v => v === ultimos5[0]);
+}
+
+function evaluarValores(ultimo) {
+    const alertas = [];
+
+    if (ultimo.ph != null && (ultimo.ph < 6.5 || ultimo.ph > 8.5))
+        alertas.push("⚠️ pH fuera de rango (6.5 – 8.5)");
+
+    if (ultimo.tds != null && ultimo.tds > 700/100)
+        alertas.push("⚠️ TDS muy alto (máx 700 mg/L)");
+
+    if (ultimo.conductividad != null && ultimo.conductividad > 1.6)
+        alertas.push("⚠️ Conductividad muy alta (máx 1.6 mS/cm)");
+
+    if (ultimo.turbidez != null && ultimo.turbidez > 6)
+        alertas.push("⚠️ Turbidez alta (máx 6 NTU)");
+
+    if (ultimo.oxigeno != null && ultimo.oxigeno < 5)
+        alertas.push("⚠️ Oxígeno disuelto bajo (mín 5 mg/L)");
+
+    return alertas;
+}
+
+// ------------------------------
+// FILTROS CASCADA (Proyecto → Pool → Sensor)
+// ------------------------------
+async function loadProjects() {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`${API_BASE}/projects`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    if (!res.ok) {
+        if (res.status === 401) return logout();
+        console.error("Error al cargar proyectos");
+        return;
+    }
+
+    const projects = await res.json();
+    const select = document.getElementById("projectSelect");
+    select.innerHTML = `<option value="">Seleccione proyecto...</option>`;
+
+    projects.forEach(p => {
+        select.innerHTML += `<option value="${p._id}">${p.name}</option>`;
+    });
+
+    document.getElementById("poolSelect").innerHTML = `<option value="">Seleccione un proyecto</option>`;
+    document.getElementById("sensorSelect").innerHTML = `<option value="">Seleccione un pool</option>`;
+    document.getElementById("poolSelect").disabled = true;
+    document.getElementById("sensorSelect").disabled = true;
+}
+
+async function loadPools(projectId) {
+    const token = localStorage.getItem("token");
+    if (!projectId) {
+        document.getElementById("poolSelect").innerHTML = `<option value="">Seleccione un proyecto</option>`;
+        document.getElementById("poolSelect").disabled = true;
+        document.getElementById("sensorSelect").innerHTML = `<option value="">Seleccione un pool</option>`;
+        document.getElementById("sensorSelect").disabled = true;
+        return;
+    }
+
+    const res = await fetch(`${API_BASE}/pools?projectId=${projectId}`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    if (!res.ok) {
+        console.error("Error al cargar pools");
+        return;
+    }
+
+    const pools = await res.json();
+    const select = document.getElementById("poolSelect");
+
+    select.innerHTML = `<option value="">Seleccione pool...</option>`;
+    pools.forEach(pool => {
+        select.innerHTML += `<option value="${pool._id}">${pool.name}</option>`;
+    });
+
+    select.disabled = false;
+    document.getElementById("sensorSelect").innerHTML = `<option value="">Seleccione un pool</option>`;
+    document.getElementById("sensorSelect").disabled = true;
+}
+
+async function loadSensors(poolId) {
+    const token = localStorage.getItem("token");
+    if (!poolId) {
+        document.getElementById("sensorSelect").innerHTML = `<option value="">Seleccione un pool</option>`;
+        document.getElementById("sensorSelect").disabled = true;
+        return;
+    }
+
+    const res = await fetch(`${API_BASE}/sensors?poolId=${poolId}`, {
+        headers: { "Authorization": "Bearer " + token }
+    });
+
+    if (!res.ok) {
+        console.error("Error al cargar sensores");
+        return;
+    }
+
+    const sensors = await res.json();
+    const select = document.getElementById("sensorSelect");
+
+    select.innerHTML = `<option value="">Seleccione sensor...</option>`;
+    sensors.forEach(sensor => {
+        select.innerHTML += `<option value="${sensor._id}">${sensor.name}</option>`;
+    });
+
+    select.disabled = false;
+}
+
+// ------------------------------
+// CARGAR MEDICIONES SEGÚN FILTROS
+// ------------------------------
+async function loadData() {
+    const token = localStorage.getItem("token");
+    if (!token) return window.location.href = "login.html";
+
+    const sensorId = document.getElementById("sensorSelect").value;
+    const from = document.getElementById("fromDate").value;
+    const to = document.getElementById("toDate").value;
+
+    const box = document.getElementById("alert-box");
+    box.className = "alert d-none mb-3";
+    box.innerHTML = "";
+
+    if (!sensorId) {
+        box.className = "alert alert-warning mb-3";
+        box.innerHTML = "Selecciona un sensor para ver los datos.";
+        destroyChart();
+        return;
+    }
+
+    const params = new URLSearchParams();
+    params.append("sensorId", sensorId);
+    if (from) params.append("from", from);
+    if (to) params.append("to", to);
+
+    try {
+        const res = await fetch(`${API_BASE}/measurements?${params.toString()}`, {
+            headers: { "Authorization": "Bearer " + token }
+        });
+
+        if (!res.ok) {
+            if (res.status === 401) return logout();
+            throw new Error("Error al cargar mediciones");
+        }
+
+        const data = await res.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+            box.className = "alert alert-warning mb-3";
+            box.innerHTML = "No hay datos para los filtros seleccionados.";
+            destroyChart();
+            return;
+        }
+
+        data.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        const labels = data.map(d =>
+            d.timestamp ? new Date(d.timestamp).toLocaleTimeString() : ""
+        );
+
+        const ph = data.map(d => d.ph ?? null);
+        const ce = data.map(d => d.conductividad ?? null);
+        const tds = data.map(d => d.tds ?? null);
+        const turbidez = data.map(d => d.turbidez ?? null);
+        const oxigeno = data.map(d => d.oxigeno ?? null);
+
+        // último registro con al menos un valor
+        const ultimo = [...data].reverse().find(d =>
+            d.ph != null || d.conductividad != null || d.tds != null ||
+            d.turbidez != null || d.oxigeno != null
+        );
+
+        if (ultimo) {
+            const alertas = [
+                ...evaluarValores(ultimo),
+                sensorCongelado(ph) ? "⚠️ Sensor pH congelado" : null,
+                sensorCongelado(ce) ? "⚠️ Sensor conductividad congelado" : null,
+                sensorCongelado(tds) ? "⚠️ Sensor TDS congelado" : null,
+                sensorCongelado(turbidez) ? "⚠️ Sensor turbidez congelado" : null,
+                sensorCongelado(oxigeno) ? "⚠️ Sensor oxígeno congelado" : null
+            ].filter(Boolean);
+
+            if (alertas.length > 0) {
+                box.className = "alert alert-danger mb-3";
+                box.innerHTML = alertas.join("<br>");
+            }
+        }
+
+        renderChart(labels, ph, ce, tds, turbidez, oxigeno);
+
+    } catch (err) {
+        console.error(err);
+        box.className = "alert alert-danger mb-3";
+        box.innerHTML = "Error al cargar datos del servidor.";
+        destroyChart();
+    }
+}
+
+// ------------------------------
+// CHART
+// ------------------------------
+function destroyChart() {
+    if (chart) {
+        chart.destroy();
+        chart = null;
+    }
+}
+
+function renderChart(labels, ph, ce, tds, turbidez, oxigeno) {
+    const ctx = document.getElementById("myChart").getContext("2d");
+    destroyChart();
+
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: "pH", data: ph, borderColor: "#2ecc71", tension: 0.3 },
+                { label: "Conductividad (mS/cm)", data: ce, borderColor: "#3498db", tension: 0.3 },
+                { label: "TDS (mg/L)", data: tds, borderColor: "#9b59b6", tension: 0.3 },
+                { label: "Turbidez (NTU)", data: turbidez, borderColor: "#f1c40f", tension: 0.3 },
+                { label: "Oxígeno (mg/L)", data: oxigeno, borderColor: "#e74c3c", tension: 0.3, spanGaps: true }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: getTextColor() }
+                }
+            },
+            scales: {
+                x: { ticks: { color: getTextColor() }},
+                y: { ticks: { color: getTextColor() }}
+            }
+        },
+        plugins: [referenceLines]
+    });
+}
+
+// ------------------------------
+// THEME + ROL
+// ------------------------------
+function toggleTheme() {
+    const body = document.body;
+    const btn = document.querySelector("button.btn-secondary");
+
+    body.classList.toggle("light-mode");
+    body.classList.toggle("dark-mode");
+
+    btn.textContent = body.classList.contains("light-mode")
+        ? "Modo Oscuro"
+        : "Modo Claro";
+
+    localStorage.setItem("theme", body.className);
+    setTimeout(() => location.reload(), 150);
+}
+
+function getTextColor() {
+    return document.body.classList.contains("dark-mode")
+        ? "#e5e5e5"
+        : "#222";
+}
+
+function setRoleBadgeFromToken() {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+        const payloadBase64 = token.split(".")[1];
+        const payloadJson = atob(payloadBase64.replace(/-/g, "+").replace(/_/g, "/"));
+        const payload = JSON.parse(payloadJson);
+
+        const role = payload.role || "agricultor";
+        const badge = document.getElementById("role-badge");
+        badge.classList.remove("d-none");
+        badge.textContent = "Rol: " + role;
+    } catch (err) {
+        console.error("No se pudo leer el rol del token", err);
+    }
+}
+
+// ------------------------------
+// EVENTOS
+// ------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+    const saved = localStorage.getItem("theme");
+    const btn = document.querySelector("button.btn-secondary");
+    if (saved) {
+        document.body.className = saved;
+        btn.textContent = saved === "light-mode" ? "Modo Oscuro" : "Modo Claro";
+    }
+
+    setRoleBadgeFromToken();
+    loadProjects();
+
+    document.getElementById("projectSelect").addEventListener("change", (e) => {
+        loadPools(e.target.value);
+        destroyChart();
+        document.getElementById("alert-box").className = "alert d-none mb-3";
+        document.getElementById("alert-box").innerHTML = "";
+    });
+
+    document.getElementById("poolSelect").addEventListener("change", (e) => {
+        loadSensors(e.target.value);
+        destroyChart();
+        document.getElementById("alert-box").className = "alert d-none mb-3";
+        document.getElementById("alert-box").innerHTML = "";
+    });
+
+    document.getElementById("sensorSelect").addEventListener("change", () => {
+        loadData();
+    });
+
+    document.getElementById("applyFiltersBtn").addEventListener("click", () => {
+        loadData();
+    });
+});
+</script>
+
+</body>
+</html>

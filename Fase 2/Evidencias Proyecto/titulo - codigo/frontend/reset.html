@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Restablecer contraseña</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+
+    <style>
+        body {
+            background: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .card {
+            width: 100%;
+            max-width: 420px;
+            border-radius: 16px;
+        }
+        .password-wrapper {
+            position: relative;
+        }
+        .toggle-btn {
+            cursor: pointer;
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="card shadow p-4">
+    <h3 class="text-center mb-3">Nueva contraseña</h3>
+
+    <form id="resetForm" novalidate>
+
+        <div class="mb-3 password-wrapper">
+            <label class="form-label">Nueva contraseña</label>
+            <input class="form-control" type="password" id="password">
+            <span class="toggle-btn" onclick="toggle('password')">👁️</span>
+            <div class="invalid-feedback">
+                La contraseña debe tener al menos 6 caracteres.
+            </div>
+        </div>
+
+        <div class="mb-3 password-wrapper">
+            <label class="form-label">Repetir contraseña</label>
+            <input class="form-control" type="password" id="password2">
+            <span class="toggle-btn" onclick="toggle('password2')">👁️</span>
+            <div class="invalid-feedback">
+                Las contraseñas no coinciden.
+            </div>
+        </div>
+
+        <button id="btnSave" class="btn btn-success w-100" type="submit">
+            Guardar nueva contraseña
+        </button>
+    </form>
+
+    <div id="msg" class="mt-3"></div>
+
+    <a href="login.html" class="d-block text-center mt-3">Volver al login</a>
+</div>
+
+<script>
+// Mostrar/ocultar contraseña
+function toggle(id) {
+    const input = document.getElementById(id);
+    input.type = input.type === "password" ? "text" : "password";
+}
+
+document.getElementById("resetForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get("token");
+
+    const passEl  = document.getElementById("password");
+    const pass2El = document.getElementById("password2");
+    const msg     = document.getElementById("msg");
+    const btn     = document.getElementById("btnSave");
+
+    const pass  = passEl.value;
+    const pass2 = pass2El.value;
+
+    // limpiar estado previo
+    msg.innerHTML = "";
+    passEl.classList.remove("is-invalid");
+    pass2El.classList.remove("is-invalid");
+
+    if (!token) {
+        msg.innerHTML = `
+            <div class="alert alert-danger">
+                El enlace de recuperación no es válido o falta el token.
+            </div>`;
+        return;
+    }
+
+    let valid = true;
+
+    if (pass.length < 6) {
+        passEl.classList.add("is-invalid");
+        valid = false;
+    }
+
+    if (pass !== pass2) {
+        pass2El.classList.add("is-invalid");
+        valid = false;
+    }
+
+    if (!valid) return;
+
+    // deshabilitar botón mientras se envía
+    btn.disabled = true;
+    btn.textContent = "Guardando...";
+
+    try {
+        const res = await fetch("http://localhost:3000/auth/reset", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ token, password: pass })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            msg.innerHTML = `
+                <div class="alert alert-success">
+                    ${data.message || "Contraseña restablecida correctamente."}
+                </div>`;
+        } else {
+            msg.innerHTML = `
+                <div class="alert alert-danger">
+                    ${data.error || "No se pudo restablecer la contraseña."}
+                </div>`;
+        }
+
+    } catch (err) {
+        console.error(err);
+        msg.innerHTML = `
+            <div class="alert alert-danger">
+                Error en el servidor. Intenta nuevamente más tarde.
+            </div>`;
+    }
+
+    // limpieza
+    passEl.value = "";
+    pass2El.value = "";
+
+    btn.disabled = false;
+    btn.textContent = "Guardar nueva contraseña";
+});
+</script>
+
+</body>
+</html>
